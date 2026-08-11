@@ -1,92 +1,16 @@
 # 🌫️ PM2.5 Prediction App
 
-Aplikasi berbasis Machine Learning untuk memprediksi konsentrasi PM2.5 berdasarkan data kualitas udara dan parameter meteorologi. Aplikasi ini membantu pengguna dalam menganalisis tingkat polusi udara serta memberikan prediksi secara cepat melalui antarmuka yang sederhana.
+**PM2.5 Prediction App** is an intelligent air quality prediction system that combines **Computer Vision** and **Machine Learning** to estimate PM2.5 concentrations from real-time traffic data. Instead of relying solely on conventional air quality sensors, the application utilizes CCTV footage to analyze traffic conditions as an indicator of particulate matter emissions.
 
-## ✨ Fitur
+The system employs **YOLO (You Only Look Once)** to detect, classify, and count different types of vehicles, including **cars, trucks, and motorcycles**, from video streams or recorded CCTV footage. The detected vehicle counts and classifications are then processed as input features for a Machine Learning model, which predicts the concentration of **PM2.5 (Particulate Matter ≤ 2.5 μm)** at the observed location.
 
-- Prediksi kadar PM2.5 menggunakan model Machine Learning.
-- Input data melalui form interaktif.
-- Menampilkan hasil prediksi secara real-time.
-- Visualisasi data dan hasil prediksi.
-- Mudah digunakan dan dikembangkan.
+By integrating object detection with predictive analytics, the application provides an efficient and scalable approach to estimating air pollution levels in areas where dedicated air quality monitoring stations are limited. The system is designed to support smart city initiatives, environmental monitoring, and data-driven decision-making by delivering fast, automated, and real-time PM2.5 predictions based on traffic activity.
 
-## 🛠️ Teknologi
+### Key Features
 
-- Python
-- Streamlit / Flask *(sesuaikan)*
-- Scikit-learn
-- Pandas
-- NumPy
-- Matplotlib / Plotly *(opsional)*
-
-## 📂 Struktur Proyek
-
-```
-├── data/              # Dataset
-├── model/             # Model Machine Learning
-├── notebooks/         # Eksperimen dan eksplorasi data
-├── app.py             # Aplikasi utama
-├── requirements.txt   # Dependency
-└── README.md
-```
-
-## 🚀 Instalasi
-
-1. Clone repository
-
-```bash
-git clone https://github.com/username/pm25-prediction-app.git
-cd pm25-prediction-app
-```
-
-2. Install dependency
-
-```bash
-pip install -r requirements.txt
-```
-
-3. Jalankan aplikasi
-
-```bash
-streamlit run app.py
-```
-
-atau
-
-```bash
-python app.py
-```
-
-## 📊 Cara Kerja
-
-1. Pengguna memasukkan parameter kualitas udara dan cuaca.
-2. Data diproses melalui model Machine Learning yang telah dilatih.
-3. Model menghasilkan prediksi konsentrasi PM2.5.
-4. Hasil ditampilkan pada aplikasi beserta visualisasinya.
-
-## 📈 Model Machine Learning
-
-Model yang digunakan dapat berupa:
-
-- Random Forest
-- XGBoost
-- Gradient Boosting
-- Linear Regression
-- atau model terbaik berdasarkan evaluasi
-
-## 📋 Evaluasi
-
-Model dievaluasi menggunakan beberapa metrik, seperti:
-
-- Mean Absolute Error (MAE)
-- Mean Squared Error (MSE)
-- Root Mean Squared Error (RMSE)
-- R² Score
-
-## 📄 Lisensi
-
-Project ini menggunakan lisensi MIT.
-
-## 👨‍💻 Author
-
-Nama Anda
+* 🚗 Real-time vehicle detection and classification using **YOLO**.
+* 📹 Traffic analysis from CCTV video streams or recorded footage.
+* 🚙 Detection of multiple vehicle categories, including cars, trucks, and motorcycles.
+* 🤖 PM2.5 concentration prediction using a Machine Learning model.
+* 📊 Real-time visualization of traffic statistics and prediction results.
+* 🌍 Scalable solution for traffic-based air quality monitoring.
