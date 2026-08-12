@@ -1,0 +1,7 @@
+env/
+.DS_Store
+*.pt
+!model_custom.pt
+runs/
+deteksi_kendaraan.py
+images_test/
