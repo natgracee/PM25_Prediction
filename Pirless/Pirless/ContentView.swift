@@ -8,6 +8,16 @@
 import SwiftUI
 
 struct ContentView: View {
+    // mock data
+    @State private var cctvTesting = TrafficPoint(
+        locationName: "Lampung",
+        carCount: 150,
+        motorcycleCount: 350,
+        busCount: 20,
+        truckCount: 5,
+        windSpeed: 2.5  // default
+    )
+
     var body: some View {
         VStack(spacing: 20) {
             VStack(alignment: .leading, spacing: 10) {
@@ -24,9 +34,8 @@ struct ContentView: View {
             .background(Color.gray.opacity(0.1))
             .cornerRadius(10)
 
-            // hasil kalkulasi
             VStack(alignment: .center, spacing: 10) {
-                Text("Hasil kalkulasi:")
+                Text("Hasil Kalkulasi:")
                     .font(.headline)
 
                 Text(
