@@ -1,0 +1,36 @@
+name: Claude Security & Code Review
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Review the diff in this pull request against main.
+            Use the /swiftui-pro skill to check for SwiftUI best-practice
+            issues (deprecated API, performance, state/data flow,
+            navigation, accessibility).
+            Also flag general security issues: hardcoded secrets,
+            unsafe network calls, unsafe data handling, force-unwraps
+            that could crash on untrusted input, and injection-style
+            vulnerabilities in any backend code touched by this PR.
+            Report findings as a structured list grouped by severity
+            (Critical / High / Medium / Low), and post the result as
+            a comment on this pull request.
