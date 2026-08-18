@@ -11,10 +11,6 @@ struct PointDetailView: View {
 
     let locationName: String
 
-    // MARK: - Mock Data
-    // Temporary UI data.
-    // Will later be replaced by project data/API.
-
     private let pm25: Double = 39
     private let temperature: Double = 31
     private let humidity: Double = 78
@@ -84,7 +80,6 @@ struct PointDetailView: View {
     }
 }
 
-// MARK: - Header
 
 private extension PointDetailView {
 
