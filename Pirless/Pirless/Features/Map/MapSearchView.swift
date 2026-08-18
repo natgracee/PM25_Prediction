@@ -11,6 +11,16 @@ import MapKit
 
 struct MapSearchView: View {
 
+    // MARK: - Input
+
+    /// Reports the coordinate AND the target camera distance for the
+    /// location the user picked, so MapView (which owns the map camera)
+    /// can recenter and zoom onto it. The distance is derived from how
+    /// administratively specific the result is (street vs. kecamatan vs.
+    /// kota vs. provinsi/negara) — see `SearchResult.makeCameraDistance`.
+    /// MapSearchView never touches the map camera itself.
+    let onSelectLocation: (CLLocationCoordinate2D, Double) -> Void
+
     // MARK: - State
 
     @Environment(\.dismiss) private var dismiss
@@ -367,12 +377,7 @@ private extension MapSearchView {
     }
 
     func select(_ result: SearchResult) {
-        // Untuk tahap ini kita tutup search setelah lokasi dipilih.
-        //
-        // Berikutnya kita bisa mengirim coordinate
-        // kembali ke MapView agar kamera map berpindah
-        // ke lokasi yang dipilih.
-
+        onSelectLocation(result.coordinate, result.cameraDistance)
         dismiss()
     }
 }
@@ -386,13 +391,25 @@ private struct SearchResult: Identifiable {
     let subtitle: String
     let coordinate: CLLocationCoordinate2D
 
+    /// Target camera distance (meters) for this result, scaled to how
+    /// administratively specific it is — matches how Apple Maps zooms
+    /// tighter for a street address than for a city or province.
+    let cameraDistance: Double
+
     init(mapItem: MKMapItem) {
-        self.id = "\(mapItem.name ?? "")-\(mapItem.placemark.coordinate.latitude)-\(mapItem.placemark.coordinate.longitude)"
+        // `mapItem.location` is non-optional in this SDK (unlike the
+        // deprecated `placemark`), so no fallback/optional-chaining needed.
+        let coordinate = mapItem.location.coordinate
+
+        self.id = "\(mapItem.name ?? "")-\(coordinate.latitude)-\(coordinate.longitude)"
         self.title = mapItem.name ?? "Unknown Location"
         self.subtitle = Self.makeSubtitle(
             from: mapItem.placemark
         )
-        self.coordinate = mapItem.placemark.coordinate
+        self.coordinate = coordinate
+        self.cameraDistance = Self.makeCameraDistance(
+            from: mapItem.placemark
+        )
     }
 
     private static func makeSubtitle(
@@ -414,10 +431,43 @@ private struct SearchResult: Identifiable {
 
         return ""
     }
+
+    /// Classifies the result's administrative scale from the most specific
+    /// placemark field that's actually populated, then maps that scale to
+    /// a camera distance — the same "zoom to match what was searched"
+    /// behavior Apple Maps uses. Checked from most to least specific:
+    /// street/thoroughfare → kecamatan (subLocality) → kota (locality) →
+    /// provinsi (administrativeArea) → negara (country) → unknown fallback.
+    private static func makeCameraDistance(
+        from placemark: CLPlacemark
+    ) -> Double {
+
+        if placemark.thoroughfare != nil {
+            return 1_200
+        }
+
+        if placemark.subLocality != nil {
+            return 4_000
+        }
+
+        if placemark.locality != nil {
+            return 18_000
+        }
+
+        if placemark.administrativeArea != nil {
+            return 150_000
+        }
+
+        if placemark.country != nil {
+            return 900_000
+        }
+
+        return 3_000
+    }
 }
 
 // MARK: - Preview
 
 #Preview {
-    MapSearchView()
+    MapSearchView(onSelectLocation: { _, _ in })
 }

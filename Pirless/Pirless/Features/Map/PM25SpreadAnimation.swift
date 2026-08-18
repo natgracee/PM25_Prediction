@@ -11,35 +11,35 @@
 //
 
 import SwiftUI
-import MapKit
 
-struct PM25SpreadAnimation: MapContent {
+// NOTE: This used to be its own `MapContent` conformance that wrapped
+// itself in a separate `Annotation` at the point's coordinate. That meant
+// every PM2.5 point produced 3 separate MapKit annotation views stacked at
+// the same coordinate (this, PM25RadarPulse, and the marker), which could
+// make MapKit's own hit-testing/annotation-selection ambiguous even though
+// this view was already `.allowsHitTesting(false)`. It is now a plain
+// `View` that MapView composes into ONE shared `Annotation` per point,
+// alongside PM25RadarPulse and the marker, in a single ZStack.
+struct PM25SpreadAnimation: View {
 
-    let coordinate: CLLocationCoordinate2D
     let directionDegrees: Double
     let visibility: Double
 
-    @MapContentBuilder
-    var body: some MapContent {
-
-        Annotation(
-            "",
-            coordinate: coordinate
-        ) {
-            TimelineView(.animation) { context in
-                ZStack {
-                    ForEach(0..<5, id: \.self) { index in
-                        spreadParticle(
-                            index: index,
-                            time: context.date.timeIntervalSinceReferenceDate
-                        )
-                    }
+    var body: some View {
+        TimelineView(.animation) { context in
+            ZStack {
+                ForEach(0..<5, id: \.self) { index in
+                    spreadParticle(
+                        index: index,
+                        time: context.date.timeIntervalSinceReferenceDate
+                    )
                 }
-                .frame(
-                    width: 20,
-                    height: 20
-                )
             }
+            .frame(
+                width: 20,
+                height: 20
+            )
+            .allowsHitTesting(false)
         }
     }
 
