@@ -76,3 +76,4 @@ struct PM25LegendView: View {
         print("Dismiss")
     }
 }
+

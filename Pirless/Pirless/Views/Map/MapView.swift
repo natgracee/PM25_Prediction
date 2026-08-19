@@ -6,13 +6,6 @@
 //
 
 
-//
-//  MapView.swift
-//  Pirless
-//
-//  Created by Muh. Naufal Fahri Salim on 8/13/26.
-//
-
 import SwiftUI
 import MapKit
 
@@ -24,6 +17,11 @@ struct MapView: View {
     @State private var showingSearch = false
     @State private var cameraDistance: Double = 3000
     @State private var selectedPoint: MapPoint?
+
+    // Owns the Map's camera. MapView remains the single source of truth for
+    // camera position — MapSearchView never touches this directly, it only
+    // reports back a coordinate via `onSelectLocation`.
+    @State private var cameraPosition: MapCameraPosition = .automatic
 
     // MARK: - Sample Data
 
@@ -120,12 +118,13 @@ struct MapView: View {
             }
             .ignoresSafeArea(edges: .top)
             .sheet(isPresented: $showingSearch) {
-                MapSearchView()
+                MapSearchView(onSelectLocation: moveCamera(to:distance:))
                     .presentationDragIndicator(.visible)
             }
             .navigationDestination(item: $selectedPoint) { point in
                 PointDetailView(
-                    locationName: point.name
+                    locationName: point.name,
+                    pm25: point.pm25
                 )
             }
         }
@@ -137,7 +136,7 @@ struct MapView: View {
 private extension MapView {
 
     var mapContent: some View {
-        Map {
+        Map(position: $cameraPosition) {
             ForEach(points) { point in
 
                 PM25SpreadOverlay(
@@ -147,32 +146,86 @@ private extension MapView {
                     visibility: spreadVisibility
                 )
 
-                PM25SpreadAnimation(
-                    coordinate: point.coordinate,
-                    directionDegrees: point.spreadDirection,
-                    visibility: spreadVisibility
-                )
-
-                PM25RadarPulse(
-                    coordinate: point.coordinate,
-                    color: point.markerColor,
-                    scale: radarScale,
-                    visibility: radarVisibility
-                )
-
+                // NOTE: title is empty on purpose — no on-map text label.
+                // Emptying it used to regress tap reliability, but that was
+                // back when each point had 3 separate overlapping
+                // Annotations and MapKit likely relied on the title to help
+                // disambiguate hit-testing between them. Now that spread
+                // animation, radar pulse, and the marker are combined into
+                // a single Annotation per point (see note below), there's
+                // no competing annotation at this coordinate anymore, so
+                // the title is no longer needed for disambiguation.
+                //
+                // NOTE: spread animation, radar pulse, and the marker used
+                // to each be their own separate `Annotation` at this same
+                // coordinate — 3 MapKit annotation views stacked on top of
+                // each other per point. That made MapKit's own annotation
+                // hit-testing/selection ambiguous, independent of SwiftUI's
+                // `.allowsHitTesting(false)` on the decorative layers.
+                // They're now combined into a single Annotation with one
+                // ZStack, so MapKit only ever tracks ONE annotation view
+                // per point. Order inside the ZStack matters: marker must
+                // stay last so it renders on top.
                 Annotation(
-                    point.name,
+                    "",
                     coordinate: point.coordinate
                 ) {
-                    marker(for: point)
+                    ZStack {
+                        PM25SpreadAnimation(
+                            directionDegrees: point.spreadDirection,
+                            visibility: spreadVisibility
+                        )
+
+                        PM25RadarPulse(
+                            color: point.markerColor,
+                            scale: radarScale,
+                            visibility: radarVisibility
+                        )
+
+                        marker(for: point)
+                    }
                 }
             }
 
             UserAnnotation()
         }
         .mapStyle(.standard)
-        .onMapCameraChange(frequency: .continuous) { context in
+        // Changed from `.continuous` to `.onEnd`: continuous firing rebuilt
+        // the entire annotation tree (radar pulse, spread animation, and
+        // every marker) on almost every pixel of camera movement. That
+        // churn is the most likely reason a marker felt like it needed to
+        // "settle" after appearing/panning before it could be tapped.
+        // `.onEnd` only updates once a gesture finishes, so annotation
+        // views stay stable while the user is actively interacting.
+        .onMapCameraChange(frequency: .onEnd) { context in
             cameraDistance = context.camera.distance
+        }
+    }
+
+    /// Recenters AND zooms the map camera onto a coordinate picked from
+    /// search results. Search must always bring the result into focus,
+    /// even if it was already technically visible in a zoomed-out
+    /// viewport (e.g. world view) — so this always applies the given
+    /// `distance` rather than keeping whatever `cameraDistance` the user
+    /// happened to be at. `distance` comes from MapSearchView, scaled to
+    /// how administratively specific the picked result is (street vs.
+    /// kecamatan vs. kota vs. provinsi/negara), matching Apple Maps'
+    /// behavior of zooming tighter for more specific results.
+    /// `cameraDistance` is updated to match so `.onMapCameraChange` and
+    /// the radar/spread visibility calculations stay in sync with the
+    /// new zoom level.
+    func moveCamera(
+        to coordinate: CLLocationCoordinate2D,
+        distance: Double
+    ) {
+        withAnimation {
+            cameraDistance = distance
+            cameraPosition = .camera(
+                MapCamera(
+                    centerCoordinate: coordinate,
+                    distance: distance
+                )
+            )
         }
     }
 
@@ -182,10 +235,10 @@ private extension MapView {
             selectedPoint = point
         } label: {
             PM25MapMarker(value: point.pm25)
-                .frame(width: 44, height: 44)
+                .frame(width: 64, height: 64)
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MarkerButtonStyle())
         .accessibilityLabel(point.name)
         .accessibilityValue(point.accessibilityDescription)
         .accessibilityHint(
@@ -208,10 +261,11 @@ private extension MapView {
         }
     }
 
+    // NOTE: The Figma reference places the info/legend button at the
+    // top-LEADING edge of the screen (not trailing, as the previous
+    // implementation had it). Swapped the Spacer position to match.
     var topControls: some View {
         HStack {
-            Spacer()
-
             if showingPM25Legend {
                 PM25LegendView {
                     withAnimation(.easeOut(duration: 0.15)) {
@@ -233,11 +287,17 @@ private extension MapView {
                             )
                     )
             }
+
+            Spacer()
         }
         .padding(.horizontal, 16)
         .safeAreaPadding(.top, 60)
     }
 
+    // NOTE: Uses the system Liquid Glass material (`.glassEffect()`) instead
+    // of `.thinMaterial`, matching the "Liquid Glass - Regular - Medium"
+    // component used throughout the Figma reference. The project's
+    // deployment target (iOS 26.5) supports this API directly.
     var infoButton: some View {
         Button {
             withAnimation(.easeOut(duration: 0.15)) {
@@ -248,12 +308,9 @@ private extension MapView {
                 .font(.system(size: 20, weight: .bold))
                 .foregroundStyle(.primary)
                 .frame(width: 44, height: 44)
-                .background(
-                    .thinMaterial,
-                    in: Circle()
-                )
         }
         .buttonStyle(.plain)
+        .glassEffect(in: Circle())
         .accessibilityLabel("Informasi PM2.5")
         .accessibilityHint(
             "Menampilkan informasi kategori PM2.5"
@@ -279,16 +336,33 @@ private extension MapView {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 16)
             .frame(minHeight: 52)
-            .background(
-                .thinMaterial,
-                in: Capsule()
-            )
         }
         .buttonStyle(.plain)
+        .glassEffect(in: Capsule())
         .accessibilityLabel("Search Area")
         .accessibilityHint("Mencari lokasi")
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
+    }
+}
+
+// MARK: - Marker Button Style
+
+/// Gives the marker a visible pressed state (slightly scaled down and
+/// dimmed) so it's clear a tap registered, instead of `.plain`'s lack of
+/// any feedback. Kept lightweight on purpose — the hit-testing/annotation
+/// churn fixed earlier in this file is unrelated to this purely visual
+/// change.
+private struct MarkerButtonStyle: ButtonStyle {
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.88 : 1.0)
+            .opacity(configuration.isPressed ? 0.75 : 1.0)
+            .animation(
+                .easeOut(duration: 0.12),
+                value: configuration.isPressed
+            )
     }
 }
 
@@ -333,3 +407,4 @@ private struct MapPoint: Identifiable, Hashable {
 #Preview {
     MapView()
 }
+

@@ -7,11 +7,46 @@
 
 import SwiftUI
 
+// MARK: - Design Tokens (from Figma reference)
+//
+// These accent colors come from the Figma design and don't map to an
+// existing semantic system color (Color.primary/.secondary, etc.), so they
+// are kept as raw values scoped to this file. Adding a named color set to
+// Assets.xcassets (Pirless/Assets.xcassets) would be the cleaner long-term
+// home for these tokens, but that file sits outside Features/Details, so it
+// was intentionally left untouched — see the implementation report.
+
+private let detailCardTitleColor = Color(
+    red: 0x3d / 255.0,
+    green: 0x4a / 255.0,
+    blue: 0x44 / 255.0
+)
+
+private let detailCardValueColor = Color(
+    red: 0x1b / 255.0,
+    green: 0x1c / 255.0,
+    blue: 0x1c / 255.0
+)
+
+private let detailLinkColor = Color(
+    red: 0x1d / 255.0,
+    green: 0x7a / 255.0,
+    blue: 0x64 / 255.0
+)
+
 struct PointDetailView: View {
 
     let locationName: String
 
-    private let pm25: Double = 39
+    /// PM2.5 value of the specific marker that was tapped on the map.
+    /// Passed in by MapView (point.pm25) so this screen always reflects
+    /// the selected point instead of a fixed sample value.
+    let pm25: Double
+
+    // MARK: - Mock Data
+    // Temporary UI data.
+    // Will later be replaced by project data/API.
+
     private let temperature: Double = 31
     private let humidity: Double = 78
     private let windSpeed: Double = 10
@@ -48,26 +83,24 @@ struct PointDetailView: View {
         )
     ]
 
-    @Environment(\.dismiss) private var dismiss
-
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-
-                header
 
                 sourceInformation
 
                 PM25GaugeView(value: pm25)
                     .padding(.top, 32)
 
-                historyButton
                 metricsGrid
 
-                VehicleBreakdownView(
-                    vehicles: vehicleBreakdown
-                )
-                .padding(.top, 20)
+                historyLink
+
+                vehicleBreakdownSection
+                    .padding(.top, 24)
+
+                footerNote
+                    .padding(.top, 32)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
@@ -76,51 +109,13 @@ struct PointDetailView: View {
         .background(
             Color(.systemGroupedBackground)
         )
-        .navigationBarBackButtonHidden()
-    }
-}
-
-
-private extension PointDetailView {
-
-    var header: some View {
-        HStack(spacing: 16) {
-
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(
-                        .system(
-                            size: 20,
-                            weight: .semibold
-                        )
-                    )
-                    .foregroundStyle(.primary)
-                    .frame(
-                        width: 56,
-                        height: 56
-                    )
-                    .background(
-                        .regularMaterial,
-                        in: Circle()
-                    )
-            }
-            .accessibilityLabel("Kembali")
-
-            Text(locationName)
-                .font(
-                    .system(
-                        size: 28,
-                        weight: .bold
-                    )
-                )
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-
-            Spacer(minLength: 0)
-        }
-        .padding(.top, 12)
+        // NOTE: Uses the native NavigationStack toolbar (system back button
+        // + inline title) instead of the previous custom header, per the
+        // Figma reference. This is purely a chrome/presentation change —
+        // the push/pop navigation architecture from MapView
+        // (NavigationStack + .navigationDestination(item:)) is unchanged.
+        .navigationTitle(locationName)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -129,57 +124,39 @@ private extension PointDetailView {
 private extension PointDetailView {
 
     var sourceInformation: some View {
-        VStack(spacing: 4) {
-
-            Text(
-                "Sumber: CCTV Jalan \(locationName)"
-            )
-            .font(.system(size: 16))
+        Text("Sumber: CCTV Jalan \(locationName)")
+            .font(.caption)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
-
-            Text("diperbarui 7 menit lalu")
-                .font(.system(size: 14))
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 12)
+            .accessibilityLabel("Sumber data: CCTV Jalan \(locationName)")
     }
 }
 
-// MARK: - History
+// MARK: - History Link
 
 private extension PointDetailView {
 
-    var historyButton: some View {
-        Button {
-            // TODO: Navigate to PM2.5 history.
-        } label: {
-            Text("Check History")
-                .font(
-                    .system(
-                        size: 17,
-                        weight: .semibold
-                    )
-                )
-                .foregroundStyle(.white)
-                .frame(
-                    width: 230,
-                    height: 52
-                )
-                .background(
-                    Color.green,
-                    in: Capsule()
-                )
+    var historyLink: some View {
+        HStack {
+            Spacer(minLength: 0)
+
+            Button {
+                // TODO: Navigate to PM2.5 history.
+            } label: {
+                Text("Check History")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(detailLinkColor)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Check History")
+            .accessibilityHint(
+                "Membuka riwayat kualitas udara"
+            )
         }
-        .buttonStyle(.plain)
-        .padding(.top, 16)
-        .accessibilityLabel("Check History")
-        .accessibilityHint(
-            "Membuka riwayat kualitas udara"
-        )
+        .padding(.top, 8)
     }
 }
 
@@ -192,45 +169,75 @@ private extension PointDetailView {
             columns: [
                 GridItem(
                     .flexible(),
-                    spacing: 12
+                    spacing: 8
                 ),
                 GridItem(
                     .flexible(),
-                    spacing: 12
+                    spacing: 8
                 )
             ],
-            spacing: 12
+            spacing: 8
         ) {
 
             MetricCard(
                 title: "Temp",
                 value: "\(Int(temperature))°C",
-                systemImage: "thermometer.medium",
-                iconColor: .orange
+                systemImage: "thermometer.medium"
             )
 
             MetricCard(
                 title: "Humidity",
                 value: "\(Int(humidity))%",
-                systemImage: "humidity",
-                iconColor: .blue
+                systemImage: "humidity"
             )
 
             MetricCard(
                 title: "Wind",
                 value: "\(Int(windSpeed)) km/h",
-                systemImage: "wind",
-                iconColor: .cyan
+                systemImage: "wind"
             )
 
             MetricCard(
                 title: "Vehicles",
                 value: "\(vehiclesPerHour)/hr",
-                systemImage: "car.fill",
-                iconColor: .green
+                systemImage: "car.fill"
             )
         }
         .padding(.top, 24)
+    }
+}
+
+// MARK: - Vehicle Breakdown
+
+private extension PointDetailView {
+
+    /// Standalone heading + the compact list card, matching the Figma
+    /// layout where the "Vehicle Breakdown" title sits outside the card.
+    var vehicleBreakdownSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+
+            Text("Vehicle Breakdown")
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundStyle(detailCardTitleColor)
+
+            VehicleBreakdownView(
+                vehicles: vehicleBreakdown
+            )
+        }
+    }
+}
+
+// MARK: - Footer
+
+private extension PointDetailView {
+
+    var footerNote: some View {
+        Text("Data diperbarui secara berkala untuk informasi yang lebih akurat")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
     }
 }
 
@@ -241,53 +248,68 @@ private struct MetricCard: View {
     let title: String
     let value: String
     let systemImage: String
-    let iconColor: Color
 
     var body: some View {
         VStack(
             alignment: .leading,
-            spacing: 16
+            spacing: 0
         ) {
 
+            // MARK: Top Row
             HStack {
-
                 Text(title)
-                    .font(.system(size: 18))
-                    .foregroundStyle(.secondary)
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(detailCardTitleColor)
 
                 Spacer()
 
                 Image(systemName: systemImage)
                     .font(
                         .system(
-                            size: 24,
+                            size: 18,
                             weight: .medium
                         )
                     )
-                    .foregroundStyle(iconColor)
+                    .foregroundStyle(.cyan)
             }
 
+            Spacer()
+
+            // MARK: Value
             Text(value)
-                .font(
-                    .system(
-                        size: 30,
-                        weight: .bold
-                    )
-                )
-                .foregroundStyle(.primary)
-                .minimumScaleFactor(0.8)
+                .font(.subheadline)
+                .foregroundStyle(detailCardValueColor)
                 .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
-        .padding(20)
+        .padding(17)
         .frame(maxWidth: .infinity)
-        .frame(minHeight: 150)
+        .frame(height: 116)
         .background(
             Color(.secondarySystemGroupedBackground),
             in: RoundedRectangle(
-                cornerRadius: 24,
+                cornerRadius: 12,
                 style: .continuous
             )
         )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: 12,
+                style: .continuous
+            )
+            .strokeBorder(
+                Color(.separator).opacity(0.35),
+                lineWidth: 1
+            )
+        )
+        .shadow(
+            color: .black.opacity(0.04),
+            radius: 15,
+            x: 0,
+            y: 10
+        )
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -296,7 +318,9 @@ private struct MetricCard: View {
 #Preview {
     NavigationStack {
         PointDetailView(
-            locationName: "Jalan Malioboro, Yogyakarta"
+            locationName: "Jalan Malioboro, Yogyakarta",
+            pm25: 61
         )
     }
 }
+
