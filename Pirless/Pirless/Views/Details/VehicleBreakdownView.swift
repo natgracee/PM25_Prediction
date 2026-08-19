@@ -5,75 +5,56 @@
 //  Created by M. TAQWA ADDARI on 17/08/26.
 //
 
-
 import SwiftUI
 
+/// Compact vehicle-count list card shown on the Detail screen.
+///
+/// NOTE: The Figma reference draws the section title ("Vehicle Breakdown")
+/// as a standalone heading *outside* this card, with the card itself
+/// containing only the tight row list. The heading now lives in
+/// `Detail.swift` (`vehicleBreakdownSection`) so this view stays a plain
+/// reusable list card. Rows also use the system font (SF Pro) rather than
+/// a custom font, per the "no custom font" implementation decision.
 struct VehicleBreakdownView: View {
 
     let vehicles: [VehicleItem]
 
     var body: some View {
-        VStack(
-            alignment: .leading,
-            spacing: 0
-        ) {
-
-            Text("Vehicle Breakdown")
-                .font(
-                    .system(
-                        size: 22,
-                        weight: .bold
-                    )
-                )
-                .padding(
-                    .horizontal,
-                    20
-                )
-                .padding(
-                    .vertical,
-                    18
-                )
-
-            Divider()
+        VStack(alignment: .leading, spacing: 4) {
 
             ForEach(vehicles) { vehicle in
 
-                HStack(spacing: 16) {
+                HStack(spacing: 8) {
 
                     Image(systemName: vehicle.systemImage)
-                        .font(.system(size: 24, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.cyan)
-                        .frame(width: 40)
+                        .frame(width: 16)
 
                     Text(vehicle.name)
-                        .font(.system(size: 18))
-                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
 
                     Spacer(minLength: 8)
 
                     Text("\(vehicle.count)")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.callout)
+                        .fontWeight(.medium)
                         .foregroundStyle(.primary)
-                        .frame(width: 55, alignment: .trailing)
-
-                    Text("kend/jam")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 70, alignment: .leading)
                 }
-                .padding(.horizontal, 20)
-                .frame(maxWidth: .infinity, minHeight: 60)
-
-                if vehicle.id != vehicles.last?.id {
-                    Divider()
-                        .padding(.leading, 20)
-                }
+                .frame(minHeight: 24)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "\(vehicle.name): \(vehicle.count) kendaraan per jam"
+                )
             }
         }
+        .padding(17)
+        .frame(maxWidth: .infinity)
         .background(
             Color(.secondarySystemGroupedBackground),
             in: RoundedRectangle(
-                cornerRadius: 24,
+                cornerRadius: 12,
                 style: .continuous
             )
         )
@@ -89,8 +70,6 @@ struct VehicleItem: Identifiable {
     let systemImage: String
     let color: Color
 }
-
-// MARK: - Preview
 
 // MARK: - Preview
 
