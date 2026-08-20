@@ -1,12 +1,4 @@
 //
-//  HistoryFilter.swift
-//  Pirless
-//
-//  Created by Graceila Natasya on 19/08/26.
-//
-
-
-//
 //  HistoryView.swift
 //  Pirless
 //
@@ -20,61 +12,25 @@ import UIKit
 // MARK: - History Filter
 
 enum HistoryFilter: String, CaseIterable, Identifiable {
-
+    
     case daily = "Daily"
     case weekly = "Weekly"
     case monthly = "Monthly"
-
+    
     var id: String {
         rawValue
-    }
-}
-
-// MARK: - Maintenance State
-
-private extension HistoryView {
-
-    var maintenanceState: some View {
-
-        VStack(spacing: 8) {
-
-            Text("We'll still warming up this page")
-                .font(
-                    .system(
-                        size: 17,
-                        weight: .bold
-                    )
-                )
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.center)
-
-            Text("Check back soon")
-                .font(
-                    .system(
-                        size: 14,
-                        weight: .regular
-                    )
-                )
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(
-            maxWidth: .infinity,
-            minHeight: 550,
-            alignment: .center
-        )
     }
 }
 
 // MARK: - Chart Data
 
 struct HistoryChartData: Identifiable {
-
+    
     let id: UUID
     let date: Date
     let pm25: Double
     let vehicles: Int
-
+    
     init(
         id: UUID = UUID(),
         date: Date,
@@ -91,53 +47,48 @@ struct HistoryChartData: Identifiable {
 // MARK: - History View
 
 struct HistoryView: View {
-
+    
     // MARK: - Input
-
+    
     let trafficPoint: TrafficPoint
-
+    
     // MARK: - Environment
-
+    
     @StateObject
     private var historyStore = HistoryStore.shared
-
+    
     @Environment(\.dismiss)
     private var dismiss
-
+    
     // MARK: - State
-
+    
     @State
     private var selectedFilter: HistoryFilter = .daily
-
+    
     @State
     private var chartData: [HistoryChartData] = []
-
+    
     @State
     private var csvURL: URL?
-
+    
     @State
     private var showShareSheet = false
-
+    
     // MARK: - Body
-
+    
     var body: some View {
-
         ScrollView {
-
             VStack(spacing: 20) {
-
+                
                 headerView
-
+                
                 filterSegmentedControl
-
+                
                 if selectedFilter == .daily {
-
                     chartCard
                     saveButton
                     metricsView
-
                 } else {
-
                     maintenanceState
                 }
             }
@@ -156,10 +107,11 @@ struct HistoryView: View {
         .onChange(of: selectedFilter) { _, _ in
             reloadData()
         }
+        .onReceive(historyStore.$readings) { _ in
+            reloadData()
+        }
         .sheet(isPresented: $showShareSheet) {
-
             if let csvURL {
-
                 ShareSheet(items: [csvURL])
                     .presentationDetents([.medium])
             }
@@ -170,17 +122,13 @@ struct HistoryView: View {
 // MARK: - Header
 
 private extension HistoryView {
-
+    
     var headerView: some View {
-
         HStack {
-
+            
             Button {
-
                 dismiss()
-
             } label: {
-
                 Image(systemName: "chevron.left")
                     .font(
                         .system(
@@ -190,16 +138,17 @@ private extension HistoryView {
                     )
                     .foregroundStyle(.primary)
                     .frame(
-                        width: 40,
-                        height: 40
+                        width: 44,
+                        height: 44
                     )
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Kembali")
-
+            
             Spacer()
-
+            
             VStack(spacing: 3) {
-
+                
                 Text("History")
                     .font(
                         .system(
@@ -207,20 +156,20 @@ private extension HistoryView {
                             weight: .bold
                         )
                     )
-
+                
                 Text(trafficPoint.locationName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-
+            
             Spacer()
-
+            
             Color.clear
                 .frame(
-                    width: 40,
-                    height: 40
+                    width: 44,
+                    height: 44
                 )
         }
     }
@@ -229,53 +178,58 @@ private extension HistoryView {
 // MARK: - Filter
 
 private extension HistoryView {
-
+    
     var filterSegmentedControl: some View {
-
         HStack(spacing: 4) {
-
+            
             filterButton(
                 title: "Daily",
-                filter: .daily
+                filter: .daily,
+                enabled: true
             )
-
+            
             filterButton(
                 title: "Weekly",
-                filter: .weekly
+                filter: .weekly,
+                enabled: false
             )
-
+            
             filterButton(
                 title: "Monthly",
-                filter: .monthly
+                filter: .monthly,
+                enabled: false
             )
         }
         .padding(4)
         .background(
-            Color(.systemGray4)
+            Color(.systemGray5)
         )
-        .clipShape(
-            Capsule()
-        )
+        .clipShape(Capsule())
     }
-
+    
     @ViewBuilder
     func filterButton(
         title: String,
-        filter: HistoryFilter
+        filter: HistoryFilter,
+        enabled: Bool
     ) -> some View {
-
+        
         let selected = selectedFilter == filter
-
+        
         Button {
-
+            
+            guard enabled else {
+                return
+            }
+            
             withAnimation(
                 .easeInOut(duration: 0.2)
             ) {
                 selectedFilter = filter
             }
-
+            
         } label: {
-
+            
             Text(title)
                 .font(
                     .system(
@@ -286,16 +240,14 @@ private extension HistoryView {
                 .foregroundStyle(
                     selected
                         ? Color.black
-                        : Color.white
+                        : Color.secondary
                 )
                 .frame(
                     maxWidth: .infinity
                 )
                 .padding(.vertical, 10)
                 .background {
-
                     if selected {
-
                         Capsule()
                             .fill(
                                 Color(
@@ -308,27 +260,82 @@ private extension HistoryView {
                 }
         }
         .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(
+            enabled ? 1 : 0.5
+        )
+    }
+}
+
+// MARK: - Maintenance State
+
+private extension HistoryView {
+    
+    var maintenanceState: some View {
+        VStack(spacing: 10) {
+            
+            ZStack {
+                
+                Circle()
+                    .fill(
+                        Color.secondary.opacity(0.10)
+                    )
+                    .frame(
+                        width: 64,
+                        height: 64
+                    )
+                
+                Image(
+                    systemName: "clock.arrow.circlepath"
+                )
+                .font(
+                    .system(
+                        size: 27,
+                        weight: .medium
+                    )
+                )
+                .foregroundStyle(.secondary)
+            }
+            
+            Text("Coming Soon")
+                .font(
+                    .system(
+                        size: 17,
+                        weight: .bold
+                    )
+                )
+            
+            Text(
+                "Weekly dan Monthly history\nakan tersedia pada pembaruan berikutnya."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+        }
+        .frame(
+            maxWidth: .infinity,
+            minHeight: 420
+        )
     }
 }
 
 // MARK: - Chart Card
 
 private extension HistoryView {
-
+    
     var chartCard: some View {
-
         VStack(
             alignment: .leading,
             spacing: 12
         ) {
-
+            
             HStack {
-
+                
                 VStack(
                     alignment: .leading,
                     spacing: 3
                 ) {
-
+                    
                     Text("PM2.5")
                         .font(
                             .system(
@@ -336,26 +343,25 @@ private extension HistoryView {
                                 weight: .bold
                             )
                         )
-
+                    
                     Text(trafficPoint.locationName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-
+                
                 Spacer()
-
-                Text("\(chartData.count) data")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                
+                Text(
+                    "\(chartData.count) data"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
-
+            
             if chartData.isEmpty {
-
                 emptyChart
-
             } else {
-
                 pm25Chart
             }
         }
@@ -376,16 +382,15 @@ private extension HistoryView {
     }
 }
 
-// MARK: - Empty Daily Chart
+// MARK: - Empty Chart
 
 private extension HistoryView {
-
+    
     var emptyChart: some View {
-
         VStack(spacing: 10) {
-
+            
             ZStack {
-
+                
                 Circle()
                     .fill(
                         Color.secondary.opacity(0.10)
@@ -394,7 +399,7 @@ private extension HistoryView {
                         width: 64,
                         height: 64
                     )
-
+                
                 Image(
                     systemName: "chart.xyaxis.line"
                 )
@@ -406,7 +411,7 @@ private extension HistoryView {
                 )
                 .foregroundStyle(.secondary)
             }
-
+            
             Text("Belum ada riwayat")
                 .font(
                     .system(
@@ -414,9 +419,9 @@ private extension HistoryView {
                         weight: .semibold
                     )
                 )
-
+            
             Text(
-                "Belum ada data PM2.5 untuk titik ini."
+                "Belum ada data PM2.5 untuk titik ini hari ini."
             )
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -429,114 +434,15 @@ private extension HistoryView {
     }
 }
 
-// MARK: - Under Maintenance
-
-private extension HistoryView {
-
-    var maintenanceView: some View {
-
-        VStack(spacing: 16) {
-
-            ZStack {
-
-                Circle()
-                    .fill(
-                        Color.orange.opacity(0.13)
-                    )
-                    .frame(
-                        width: 76,
-                        height: 76
-                    )
-
-                Image(
-                    systemName:
-                        "wrench.and.screwdriver.fill"
-                )
-                .font(
-                    .system(
-                        size: 29,
-                        weight: .semibold
-                    )
-                )
-                .foregroundStyle(.orange)
-            }
-
-            VStack(spacing: 7) {
-
-                Text("Under Maintenance")
-                    .font(
-                        .system(
-                            size: 18,
-                            weight: .bold
-                        )
-                    )
-
-                Text(
-                    maintenanceMessage
-                )
-                .font(
-                    .system(
-                        size: 14,
-                        weight: .regular
-                    )
-                )
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .lineSpacing(2)
-                .fixedSize(
-                    horizontal: false,
-                    vertical: true
-                )
-
-                Text("Please check back later.")
-                    .font(
-                        .system(
-                            size: 13,
-                            weight: .medium
-                        )
-                    )
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(
-            maxWidth: .infinity,
-            minHeight: 230
-        )
-        .padding(.horizontal, 20)
-    }
-
-    var maintenanceMessage: String {
-
-        switch selectedFilter {
-
-        case .weekly:
-            return """
-            Weekly history is currently
-            under maintenance.
-            """
-
-        case .monthly:
-            return """
-            Monthly history is currently
-            under maintenance.
-            """
-
-        case .daily:
-            return ""
-        }
-    }
-}
-
 // MARK: - PM2.5 Chart
 
 private extension HistoryView {
-
+    
     var pm25Chart: some View {
-
         Chart {
-
+            
             ForEach(chartData) { item in
-
+                
                 AreaMark(
                     x: .value(
                         "Waktu",
@@ -548,14 +454,9 @@ private extension HistoryView {
                     )
                 )
                 .foregroundStyle(
-                    Color(
-                        red: 0.29,
-                        green: 0.75,
-                        blue: 0.68
-                    )
-                    .opacity(0.25)
+                    Color.green.opacity(0.18)
                 )
-
+                
                 LineMark(
                     x: .value(
                         "Waktu",
@@ -566,19 +467,13 @@ private extension HistoryView {
                         item.pm25
                     )
                 )
-                .foregroundStyle(
-                    Color(
-                        red: 0.10,
-                        green: 0.55,
-                        blue: 0.48
-                    )
-                )
+                .foregroundStyle(.green)
                 .lineStyle(
                     StrokeStyle(
                         lineWidth: 2.5
                     )
                 )
-
+                
                 PointMark(
                     x: .value(
                         "Waktu",
@@ -589,20 +484,29 @@ private extension HistoryView {
                         item.pm25
                     )
                 )
-                .foregroundStyle(
-                    Color(
-                        red: 0.10,
-                        green: 0.55,
-                        blue: 0.48
-                    )
-                )
+                .foregroundStyle(.green)
             }
         }
         .frame(height: 230)
         .chartXAxis {
-            AxisMarks()
+            
+            AxisMarks(
+                values: .automatic
+            ) {
+                
+                AxisGridLine()
+                
+                AxisTick()
+                
+                AxisValueLabel(
+                    format: .dateTime
+                        .hour()
+                        .minute()
+                )
+            }
         }
         .chartYAxis {
+            
             AxisMarks(
                 position: .leading
             )
@@ -613,26 +517,23 @@ private extension HistoryView {
 // MARK: - Save Button
 
 private extension HistoryView {
-
+    
     var saveButton: some View {
-
         HStack {
-
+            
             Spacer()
-
+            
             Button {
-
                 createCSV()
-
             } label: {
-
+                
                 HStack(spacing: 7) {
-
+                    
                     Image(
                         systemName:
                             "square.and.arrow.down"
                     )
-
+                    
                     Text("Save Data")
                         .font(
                             .system(
@@ -651,9 +552,7 @@ private extension HistoryView {
                         blue: 0.48
                     )
                 )
-                .clipShape(
-                    Capsule()
-                )
+                .clipShape(Capsule())
             }
             .buttonStyle(.plain)
             .disabled(chartData.isEmpty)
@@ -669,32 +568,31 @@ private extension HistoryView {
 // MARK: - Metrics
 
 private extension HistoryView {
-
+    
     var metricsView: some View {
-
         VStack(spacing: 14) {
-
+            
             metricCard(
                 title: "AVG PM2.5",
                 value: formatPM25(
                     averagePM25
                 ),
-                unit: "PM2.5",
+                unit: "µg/m³",
                 icon: "wind",
                 iconColor: .green
             )
-
+            
             metricCard(
                 title: "PEAK PM2.5",
                 value: formatPM25(
                     peakPM25
                 ),
-                unit: "PM2.5",
+                unit: "µg/m³",
                 icon:
                     "exclamationmark.triangle.fill",
                 iconColor: .red
             )
-
+            
             metricCard(
                 title: "AVG VEHICLES",
                 value: formatVehicles(
@@ -706,7 +604,7 @@ private extension HistoryView {
             )
         }
     }
-
+    
     func metricCard(
         title: String,
         value: String,
@@ -714,21 +612,19 @@ private extension HistoryView {
         icon: String,
         iconColor: Color
     ) -> some View {
-
+        
         VStack(
             alignment: .leading,
             spacing: 10
         ) {
-
+            
             HStack(spacing: 7) {
-
+                
                 Image(
                     systemName: icon
                 )
-                .foregroundStyle(
-                    iconColor
-                )
-
+                .foregroundStyle(iconColor)
+                
                 Text(title)
                     .font(
                         .system(
@@ -736,16 +632,14 @@ private extension HistoryView {
                             weight: .semibold
                         )
                     )
-                    .foregroundStyle(
-                        iconColor
-                    )
+                    .foregroundStyle(iconColor)
             }
-
+            
             HStack(
                 alignment: .firstTextBaseline,
-                spacing: 4
+                spacing: 5
             ) {
-
+                
                 Text(value)
                     .font(
                         .system(
@@ -753,16 +647,16 @@ private extension HistoryView {
                             weight: .bold
                         )
                     )
-
-                Text(unit)
-                    .font(
-                        .system(
-                            size: 15
+                
+                if value != "—" {
+                    Text(unit)
+                        .font(
+                            .system(
+                                size: 15
+                            )
                         )
-                    )
-                    .foregroundStyle(
-                        .secondary
-                    )
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .frame(
@@ -779,58 +673,59 @@ private extension HistoryView {
                 style: .continuous
             )
         )
+        .accessibilityElement(
+            children: .combine
+        )
     }
 }
 
 // MARK: - Calculations
 
 private extension HistoryView {
-
+    
     var pointReadings: [AirQualityReading] {
-
         historyStore.readings(
             for: trafficPoint.id
         )
     }
-
+    
     var averagePM25: Double {
-
+        
         guard !chartData.isEmpty else {
             return 0
         }
-
-        let total =
-            chartData.reduce(0.0) {
-                partialResult,
-                item in
-                partialResult + item.pm25
-            }
-
+        
+        let total = chartData.reduce(0.0) {
+            partialResult,
+            item in
+            
+            partialResult + item.pm25
+        }
+        
         return total / Double(
             chartData.count
         )
     }
-
+    
     var peakPM25: Double {
-
         chartData
             .map(\.pm25)
             .max() ?? 0
     }
-
+    
     var averageVehicles: Double {
-
+        
         guard !chartData.isEmpty else {
             return 0
         }
-
-        let total =
-            chartData.reduce(0) {
-                partialResult,
-                item in
-                partialResult + item.vehicles
-            }
-
+        
+        let total = chartData.reduce(0) {
+            partialResult,
+            item in
+            
+            partialResult + item.vehicles
+        }
+        
         return Double(total)
             / Double(chartData.count)
     }
@@ -839,85 +734,91 @@ private extension HistoryView {
 // MARK: - Load Data
 
 private extension HistoryView {
-
+    
     func reloadData() {
-
+        
         guard selectedFilter == .daily else {
-
             chartData = []
             return
         }
-
+        
         let readings = pointReadings
-
+        
         guard !readings.isEmpty else {
-
             chartData = []
             return
         }
-
+        
         let calendar = Calendar.current
         let now = Date()
-
-        let filteredReadings =
-            readings.filter { reading in
-
-                calendar.isDate(
-                    reading.timestamp,
-                    inSameDayAs: now
+        
+        let startOfToday = calendar.startOfDay(
+            for: now
+        )
+        
+        let endOfToday = calendar.date(
+            byAdding: .day,
+            value: 1,
+            to: startOfToday
+        ) ?? now
+        
+        let filteredReadings = readings.filter {
+            reading in
+            
+            reading.timestamp >= startOfToday &&
+            reading.timestamp < endOfToday
+        }
+        
+        chartData = filteredReadings
+            .sorted {
+                $0.timestamp < $1.timestamp
+            }
+            .map {
+                reading in
+                
+                HistoryChartData(
+                    id: reading.id,
+                    date: reading.timestamp,
+                    pm25: reading.pm25,
+                    vehicles:
+                        reading.vehicleCount.total
                 )
             }
-
-        chartData =
-            filteredReadings
-                .sorted {
-                    $0.timestamp < $1.timestamp
-                }
-                .map { reading in
-
-                    HistoryChartData(
-                        id: reading.id,
-                        date: reading.timestamp,
-                        pm25: reading.pm25,
-                        vehicles:
-                            reading.vehicleCount.total
-                    )
-                }
     }
 }
 
 // MARK: - CSV
 
 private extension HistoryView {
-
+    
     func createCSV() {
-
+        
         guard selectedFilter == .daily else {
             return
         }
-
+        
         guard !chartData.isEmpty else {
             return
         }
-
+        
         let formatter =
             ISO8601DateFormatter()
-
+        
         let location =
             trafficPoint.locationName
                 .replacingOccurrences(
                     of: ",",
                     with: " "
                 )
-
+        
         var csv =
             "Lokasi,Waktu,PM2.5 (ug/m3),Kendaraan (per interval),Interval (menit),Wind Speed (m/s),Humidity (%)\n"
-
-        csv += "\n"
-
+        
         let selectedIDs =
-            Set(chartData.map(\.id))
-
+            Set(
+                chartData.map(\.id)
+            )
+        
         let readings =
             pointReadings
                 .filter {
@@ -928,14 +829,14 @@ private extension HistoryView {
                 .sorted {
                     $0.timestamp < $1.timestamp
                 }
-
+        
         for reading in readings {
-
+            
             let date =
                 formatter.string(
                     from: reading.timestamp
                 )
-
+            
             let row =
                 "\(location)," +
                 "\(date)," +
@@ -944,50 +845,50 @@ private extension HistoryView {
                 "\(reading.pm25IntervalMinutes)," +
                 "\(reading.windSpeed)," +
                 "\(reading.humidity)\n"
-
+            
             csv += row
         }
-
+        
         let fileName =
             "Pirless_\(safeFileName(location))_History.csv"
-
+        
         let url =
             FileManager.default
                 .temporaryDirectory
                 .appendingPathComponent(
                     fileName
                 )
-
+        
         do {
-
+            
             try csv.write(
                 to: url,
                 atomically: true,
                 encoding: .utf8
             )
-
+            
             csvURL = url
             showShareSheet = true
-
+            
         } catch {
-
+            
             print(
-                "❌ CSV ERROR:",
+                "CSV ERROR:",
                 error.localizedDescription
             )
         }
     }
-
+    
     func safeFileName(
         _ value: String
     ) -> String {
-
+        
         let invalidCharacters =
             CharacterSet(
                 charactersIn:
                     "/\\?%*|\"<>:"
             )
-
+        
         return value
             .components(
                 separatedBy:
@@ -1006,24 +907,32 @@ private extension HistoryView {
 // MARK: - Formatting
 
 private extension HistoryView {
-
+    
     func formatPM25(
         _ value: Double
     ) -> String {
-
-        value.formatted(
+        
+        guard !chartData.isEmpty else {
+            return "—"
+        }
+        
+        return value.formatted(
             .number
                 .precision(
                     .fractionLength(1)
                 )
         )
     }
-
+    
     func formatVehicles(
         _ value: Double
     ) -> String {
-
-        value.formatted(
+        
+        guard !chartData.isEmpty else {
+            return "—"
+        }
+        
+        return value.formatted(
             .number
                 .precision(
                     .fractionLength(0)
@@ -1034,21 +943,20 @@ private extension HistoryView {
 
 // MARK: - Share Sheet
 
-struct ShareSheet:
-    UIViewControllerRepresentable {
-
+struct ShareSheet: UIViewControllerRepresentable {
+    
     let items: [Any]
-
+    
     func makeUIViewController(
         context: Context
     ) -> UIActivityViewController {
-
+        
         UIActivityViewController(
             activityItems: items,
             applicationActivities: nil
         )
     }
-
+    
     func updateUIViewController(
         _ uiViewController:
             UIActivityViewController,
@@ -1061,9 +969,7 @@ struct ShareSheet:
 // MARK: - Preview
 
 #Preview {
-
     NavigationStack {
-
         HistoryView(
             trafficPoint:
                 TrafficPoint(

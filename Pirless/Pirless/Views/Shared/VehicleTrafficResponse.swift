@@ -2,6 +2,14 @@
 //  VehicleTrafficResponse.swift
 //  Pirless
 //
+//  Created by Graceila Natasya on 19/08/26.
+//
+
+
+//
+//  VehicleTrafficResponse.swift
+//  Pirless
+//
 
 import Foundation
 

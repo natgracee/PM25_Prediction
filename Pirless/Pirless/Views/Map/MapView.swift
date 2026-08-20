@@ -2,55 +2,1133 @@
 //  MapView.swift
 //  Pirless
 //
-//  Created by Muh. Naufal Fahri Salim on 8/13/26.
-//
-
 
 import SwiftUI
 import MapKit
 
 struct MapView: View {
 
+    // MARK: - Constants
+
+    private let updateInterval: UInt64 =
+        7 * 60 * 1_000_000_000
+
     // MARK: - State
 
-    @State private var showingPM25Legend = false
-    @State private var showingSearch = false
-    @State private var cameraDistance: Double = 3000
-    @State private var selectedPoint: MapPoint?
+    @State private var vehicleTraffic:
+        [VehicleTrafficResponse] = []
 
-    // Owns the Map's camera. MapView remains the single source of truth for
-    // camera position — MapSearchView never touches this directly, it only
-    // reports back a coordinate via `onSelectLocation`.
-    @State private var cameraPosition: MapCameraPosition = .automatic
+    @State private var weatherData:
+        [UUID: WeatherResponse] = [:]
 
-    // MARK: - Sample Data
+    @State private var showingPM25Legend =
+        false
 
-    private let points: [MapPoint] = [
-        MapPoint(
-            name: "Titik 1",
-            latitude: -6.3015,
-            longitude: 106.6520,
-            pm25: 61,
-            spreadDirection: 90
-        ),
-        MapPoint(
-            name: "Titik 2",
-            latitude: -6.3025,
-            longitude: 106.6750,
-            pm25: 61,
-            spreadDirection: 90
-        ),
-        MapPoint(
-            name: "Titik 3",
-            latitude: -6.3300,
-            longitude: 106.6700,
-            pm25: 38,
-            spreadDirection: 45
+    @State private var showingSearch =
+        false
+
+    @State private var cameraDistance:
+        Double = 3000
+
+    @State private var selectedPoint:
+        TrafficPoint?
+
+    @State private var cameraPosition:
+        MapCameraPosition = .automatic
+
+    @State private var isLoading =
+        false
+
+    // MARK: - Traffic Points
+
+    private let points:
+        [TrafficPoint] = TrafficPoint.all
+
+    // MARK: - Body
+
+    var body: some View {
+
+        NavigationStack {
+
+            ZStack {
+
+                mapContent
+
+                controls
+
+                if isLoading {
+                    loadingView
+                }
+            }
+            .ignoresSafeArea(edges: .top)
+
+            .sheet(
+                isPresented:
+                    $showingSearch
+            ) {
+                MapSearchView(
+                    onSelectLocation:
+                        moveCamera(
+                            to:distance:
+                        )
+                )
+                .presentationDragIndicator(
+                    .visible
+                )
+            }
+
+            .navigationDestination(
+                item:
+                    $selectedPoint
+            ) { point in
+
+                destinationView(
+                    for: point
+                )
+            }
+        }
+
+        .task {
+            await loadMapDataLoop()
+        }
+    }
+}
+
+// MARK: - Update Loop
+
+private extension MapView {
+
+    func loadMapDataLoop() async {
+
+        while !Task.isCancelled {
+
+            await loadMapData()
+
+            do {
+
+                try await Task.sleep(
+                    nanoseconds:
+                        updateInterval
+                )
+
+            } catch {
+
+                break
+            }
+        }
+    }
+}
+
+// MARK: - Load Map Data
+
+private extension MapView {
+
+    func loadMapData() async {
+
+        await MainActor.run {
+            isLoading = true
+        }
+
+        async let vehicleTask =
+            fetchVehicleData()
+
+        async let weatherTask =
+            fetchWeatherData()
+
+        let vehicles =
+            await vehicleTask
+
+        let weather =
+            await weatherTask
+
+        guard !Task.isCancelled else {
+
+            await MainActor.run {
+                isLoading = false
+            }
+
+            return
+        }
+
+        await MainActor.run {
+
+            vehicleTraffic =
+                vehicles
+
+            weatherData =
+                weather
+        }
+
+        // Simpan batch data yang BARU
+        // menggunakan kendaraan + weather
+        // pada siklus yang sama.
+
+        saveReadingsToHistory(
+            vehicles: vehicles,
+            weather: weather
         )
-    ]
 
-    private var radarScale: CGFloat {
+        await MainActor.run {
+            isLoading = false
+        }
+    }
+}
+
+// MARK: - Fetch Vehicle Data
+
+private extension MapView {
+
+    func fetchVehicleData()
+        async -> [VehicleTrafficResponse]
+    {
+
+        do {
+
+            let vehicles =
+                try await APIClient.shared
+                    .fetchVehicleTraffic()
+
+            print("")
+            print(
+                "========================================"
+            )
+            print(
+                "📍 MAP VEHICLE DATA LOADED"
+            )
+            print(
+                "Jumlah data: \(vehicles.count)"
+            )
+            print(
+                "========================================"
+            )
+
+            for vehicle in vehicles {
+
+                print(
+                    """
+                    CAMERA:
+                    \(vehicle.kamera)
+
+                    LOKASI:
+                    \(vehicle.lokasi)
+
+                    INTERVAL:
+                    \(vehicle.intervalMenit) menit
+
+                    MULAI:
+                    \(vehicle.mulai)
+
+                    SELESAI:
+                    \(vehicle.selesai)
+
+                    MOTOR:
+                    \(vehicle.volumeKendaraan.motor)
+
+                    MOBIL:
+                    \(vehicle.volumeKendaraan.mobil)
+
+                    BUS:
+                    \(vehicle.volumeKendaraan.bus)
+
+                    TRUK:
+                    \(vehicle.volumeKendaraan.truk)
+
+                    TOTAL:
+                    \(vehicle.total)
+                    """
+                )
+
+                print(
+                    "----------------------------------------"
+                )
+            }
+
+            return vehicles
+
+        } catch {
+
+            print("")
+            print(
+                "========================================"
+            )
+            print(
+                "❌ MAP VEHICLE DATA FAILED"
+            )
+            print(
+                "========================================"
+            )
+            print(
+                error.localizedDescription
+            )
+            print(
+                "========================================"
+            )
+
+            return []
+        }
+    }
+}
+
+// MARK: - Fetch Weather Data
+
+private extension MapView {
+
+    func fetchWeatherData()
+        async -> [UUID: WeatherResponse]
+    {
+
+        var result:
+            [UUID: WeatherResponse] = [:]
+
+        await withTaskGroup(
+            of:
+                (UUID, WeatherResponse?).self
+        ) { group in
+
+            for point in points {
+
+                group.addTask {
+
+                    do {
+
+                        let weather =
+                            try await APIClient.shared
+                                .fetchWeather(
+                                    latitude:
+                                        point.latitude,
+                                    longitude:
+                                        point.longitude
+                                )
+
+                        return (
+                            point.id,
+                            weather
+                        )
+
+                    } catch {
+
+                        print(
+                            "❌ WEATHER FAILED \(point.locationName):",
+                            error.localizedDescription
+                        )
+
+                        return (
+                            point.id,
+                            nil
+                        )
+                    }
+                }
+            }
+
+            for await (
+                pointID,
+                weather
+            ) in group {
+
+                if let weather {
+
+                    result[pointID] =
+                        weather
+                }
+            }
+        }
+
+        return result
+    }
+}
+
+// MARK: - Camera Name Normalization
+
+private extension MapView {
+
+    /// Menyamakan format nama kamera
+    /// supaya:
+    ///
+    /// "Simpang Gadog"
+    /// "simpang gadog"
+    /// "SIMPANG GADOG "
+    ///
+    /// tetap dianggap sama.
+
+    func normalizedName(
+        _ value: String
+    ) -> String {
+
+        let normalized =
+            value
+                .trimmingCharacters(
+                    in:
+                        .whitespacesAndNewlines
+                )
+                .folding(
+                    options:
+                        [
+                            .caseInsensitive,
+                            .diacriticInsensitive
+                        ],
+                    locale:
+                        .current
+                )
+                .lowercased()
+
+        // Alias nama lokasi dari API.
+        //
+        // TrafficPoint:
+        // "Simpang Gadog"
+        //
+        // API:
+        // "Simpang Gadong"
+        //
+        // Keduanya dianggap sebagai lokasi yang sama.
+
+        switch normalized {
+
+        case "simpang gadong":
+            return "simpang gadog"
+
+        default:
+            return normalized
+        }
+    }
+}
+
+// MARK: - Traffic Lookup
+
+private extension MapView {
+
+    /// Mengambil data kendaraan TERBARU
+    /// untuk satu TrafficPoint.
+    ///
+    /// Prioritas pencocokan:
+    ///
+    /// 1. kamera == locationName
+    /// 2. kamera mengandung locationName
+    /// 3. lokasi mengandung locationName
+
+    func traffic(
+        for point: TrafficPoint
+    ) -> VehicleTrafficResponse? {
+
+        traffic(
+            for: point,
+            from: vehicleTraffic
+        )
+    }
+
+    func traffic(
+        for point: TrafficPoint,
+        from vehicles:
+            [VehicleTrafficResponse]
+    ) -> VehicleTrafficResponse? {
+
+        let pointName =
+            normalizedName(
+                point.locationName
+            )
+
+        // ------------------------------------------------
+        // 1. EXACT CAMERA MATCH
+        // ------------------------------------------------
+
+        let exactCamera =
+            vehicles.filter { vehicle in
+
+                normalizedName(
+                    vehicle.kamera
+                ) == pointName
+            }
+
+        if let latest =
+            exactCamera.max(
+                by: {
+                    timeInSeconds(
+                        $0.mulai
+                    )
+                    <
+                    timeInSeconds(
+                        $1.mulai
+                    )
+                }
+            ) {
+
+            print(
+                "✅ EXACT MATCH:",
+                point.locationName,
+                "<->",
+                latest.kamera
+            )
+
+            return latest
+        }
+
+        // ------------------------------------------------
+        // 2. CAMERA CONTAINS MATCH
+        // ------------------------------------------------
+
+        let containsCamera =
+            vehicles.filter { vehicle in
+
+                let cameraName =
+                    normalizedName(
+                        vehicle.kamera
+                    )
+
+                return
+                    cameraName.contains(
+                        pointName
+                    )
+                    ||
+                    pointName.contains(
+                        cameraName
+                    )
+            }
+
+        if let latest =
+            containsCamera.max(
+                by: {
+                    timeInSeconds(
+                        $0.mulai
+                    )
+                    <
+                    timeInSeconds(
+                        $1.mulai
+                    )
+                }
+            ) {
+
+            print(
+                "✅ CAMERA CONTAINS MATCH:",
+                point.locationName,
+                "<->",
+                latest.kamera
+            )
+
+            return latest
+        }
+
+        // ------------------------------------------------
+        // 3. LOKASI MATCH
+        // ------------------------------------------------
+
+        let locationMatch =
+            vehicles.filter { vehicle in
+
+                let location =
+                    normalizedName(
+                        vehicle.lokasi
+                    )
+
+                return
+                    location.contains(
+                        pointName
+                    )
+                    ||
+                    pointName.contains(
+                        location
+                    )
+            }
+
+        if let latest =
+            locationMatch.max(
+                by: {
+                    timeInSeconds(
+                        $0.mulai
+                    )
+                    <
+                    timeInSeconds(
+                        $1.mulai
+                    )
+                }
+            ) {
+
+            print(
+                "✅ LOCATION MATCH:",
+                point.locationName,
+                "<->",
+                latest.lokasi
+            )
+
+            return latest
+        }
+
+        // ------------------------------------------------
+        // NO MATCH
+        // ------------------------------------------------
+
+        print(
+            "❌ NO TRAFFIC MATCH:",
+            point.locationName
+        )
+
+        print(
+            "Available cameras:"
+        )
+
+        for vehicle in vehicles {
+
+            print(
+                " - \(vehicle.kamera)"
+            )
+        }
+
+        return nil
+    }
+
+    func timeInSeconds(
+        _ time: String
+    ) -> Int {
+
+        let components =
+            time.split(
+                separator: ":"
+            )
+
+        guard
+            components.count == 3,
+            let hour =
+                Int(components[0]),
+            let minute =
+                Int(components[1]),
+            let second =
+                Int(components[2])
+        else {
+
+            return 0
+        }
+
+        return
+            hour * 3600
+            + minute * 60
+            + second
+    }
+}
+
+// MARK: - PM2.5
+
+private extension MapView {
+
+    /// PM2.5 dihitung berdasarkan:
+    ///
+    /// - batch kendaraan TERBARU
+    /// - interval CCTV aktual
+    /// - weather aktual
+    ///
+    /// Tidak mengambil carCount/busCount
+    /// dari TrafficPoint.
+
+    func pm25(
+        for point: TrafficPoint
+    ) -> Double {
+
+        guard
+            let traffic =
+                traffic(for: point)
+        else {
+
+            return 0
+        }
+
+        let vehicleCount =
+            traffic.vehicleCount
+
+        let windSpeed =
+            weatherData[point.id]?
+                .current
+                .windSpeed10m
+            ?? point.windSpeed
+
+        return
+            point.predictedPM25C(
+                vehicleCount:
+                    vehicleCount,
+                windSpeed:
+                    windSpeed, intervalMinutes:
+                    traffic.intervalMenit
+            )
+    }
+
+    /// Interval PM2.5 mengikuti interval
+    /// CCTV yang digunakan untuk perhitungan.
+
+    func pm25Interval(
+        for point: TrafficPoint
+    ) -> Int {
+
+        traffic(
+            for: point
+        )?.intervalMenit ?? 0
+    }
+}
+
+// MARK: - Save History
+
+private extension MapView {
+
+    func saveReadingsToHistory(
+        vehicles:
+            [VehicleTrafficResponse],
+        weather:
+            [UUID: WeatherResponse]
+    ) {
+
+        guard !vehicles.isEmpty else {
+            return
+        }
+
+        guard !weather.isEmpty else {
+            return
+        }
+
+        let timestamp =
+            Date()
+
+        var newReadings:
+            [AirQualityReading] = []
+
+        for point in points {
+
+            // --------------------------------------------
+            // TRAFFIC TERBARU
+            // --------------------------------------------
+
+            guard
+                let traffic =
+                    traffic(
+                        for: point,
+                        from: vehicles
+                    )
+            else {
+
+                print(
+                    "⚠️ HISTORY SKIP TRAFFIC:",
+                    point.locationName
+                )
+
+                continue
+            }
+
+            // --------------------------------------------
+            // WEATHER
+            // --------------------------------------------
+
+            guard
+                let currentWeather =
+                    weather[point.id]
+            else {
+
+                print(
+                    "⚠️ HISTORY SKIP WEATHER:",
+                    point.locationName
+                )
+
+                continue
+            }
+
+            // --------------------------------------------
+            // VEHICLE COUNT
+            // --------------------------------------------
+
+            let vehicleCount =
+                traffic.vehicleCount
+
+            // --------------------------------------------
+            // WIND
+            // --------------------------------------------
+
+            let windSpeed =
+                currentWeather
+                    .current
+                    .windSpeed10m
+
+            // --------------------------------------------
+            // PM2.5
+            // --------------------------------------------
+
+            let calculatedPM25 =
+                point.predictedPM25C(
+                    vehicleCount:
+                        vehicleCount,
+                    windSpeed:
+                        windSpeed, intervalMinutes:
+                        traffic.intervalMenit
+                )
+
+            // --------------------------------------------
+            // READING
+            // --------------------------------------------
+
+            let reading =
+                AirQualityReading(
+                    trafficPointId:
+                        point.id,
+
+                    timestamp:
+                        timestamp,
+
+                    pm25:
+                        calculatedPM25,
+
+                    pm25IntervalMinutes:
+                        traffic.intervalMenit,
+
+                    windSpeed:
+                        windSpeed,
+
+                    humidity:
+                        currentWeather
+                            .current
+                            .relativeHumidity2m,
+
+                    vehicleCount:
+                        vehicleCount
+                )
+
+            newReadings.append(
+                reading
+            )
+
+            print(
+                """
+                💾 HISTORY READING
+
+                Point:
+                \(point.locationName)
+
+                Camera:
+                \(traffic.kamera)
+
+                Interval:
+                \(traffic.intervalMenit) menit
+
+                Mulai:
+                \(traffic.mulai)
+
+                Selesai:
+                \(traffic.selesai)
+
+                Motor:
+                \(vehicleCount.motorcycle)
+
+                Mobil:
+                \(vehicleCount.car)
+
+                Bus:
+                \(vehicleCount.bus)
+
+                Truk:
+                \(vehicleCount.truck)
+
+                Total:
+                \(vehicleCount.total)
+
+                Wind:
+                \(windSpeed) m/s
+
+                PM2.5:
+                \(calculatedPM25)
+                """
+            )
+
+            print(
+                "========================================"
+            )
+        }
+
+        guard !newReadings.isEmpty else {
+            return
+        }
+
+        Task { @MainActor in
+
+            HistoryStore.shared.add(
+                contentsOf:
+                    newReadings
+            )
+        }
+    }
+}
+
+// MARK: - Navigation Destination
+
+private extension MapView {
+
+    @ViewBuilder
+    func destinationView(
+        for point: TrafficPoint
+    ) -> some View {
+
+        if
+            let traffic =
+                traffic(for: point),
+            let weather =
+                weatherData[point.id]
+        {
+
+            PointDetailView(
+                trafficPoint:
+                    point,
+                traffic:
+                    traffic,
+                weather:
+                    weather
+            )
+
+        } else {
+
+            VStack(
+                spacing: 12
+            ) {
+
+                ProgressView()
+
+                Text(
+                    "Data belum tersedia"
+                )
+                .foregroundStyle(
+                    .secondary
+                )
+
+                // Debug tambahan
+                if vehicleTraffic.isEmpty {
+
+                    Text(
+                        "Data kendaraan belum diterima dari server."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(
+                        .secondary
+                    )
+
+                } else {
+
+                    Text(
+                        "Data CCTV untuk \(point.locationName) belum ditemukan."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(
+                        .secondary
+                    )
+                }
+            }
+            .padding()
+        }
+    }
+}
+
+// MARK: - Map
+
+private extension MapView {
+
+    var mapContent: some View {
+
+        Map(
+            position:
+                $cameraPosition
+        ) {
+
+            ForEach(
+                points
+            ) { point in
+
+                PM25SpreadOverlay(
+                    coordinate:
+                        point.coordinate,
+
+                    directionDegrees:
+                        90,
+
+                    lengthMeters:
+                        100,
+
+                    visibility:
+                        spreadVisibility
+                )
+
+                Annotation(
+                    "",
+                    coordinate:
+                        point.coordinate
+                ) {
+
+                    ZStack {
+
+                        PM25SpreadAnimation(
+                            directionDegrees:
+                                90,
+
+                            visibility:
+                                spreadVisibility
+                        )
+
+                        PM25RadarPulse(
+                            color:
+                                markerColor(
+                                    for:
+                                        point
+                                ),
+
+                            scale:
+                                radarScale,
+
+                            visibility:
+                                radarVisibility
+                        )
+
+                        marker(
+                            for:
+                                point
+                        )
+                    }
+                }
+            }
+
+            UserAnnotation()
+        }
+
+        .mapStyle(
+            .standard
+        )
+
+        .onMapCameraChange(
+            frequency:
+                .onEnd
+        ) { context in
+
+            cameraDistance =
+                context.camera.distance
+        }
+    }
+
+    func moveCamera(
+        to coordinate:
+            CLLocationCoordinate2D,
+        distance:
+            Double
+    ) {
+
+        withAnimation {
+
+            cameraDistance =
+                distance
+
+            cameraPosition =
+                .camera(
+                    MapCamera(
+                        centerCoordinate:
+                            coordinate,
+
+                        distance:
+                            distance
+                    )
+                )
+        }
+    }
+}
+
+// MARK: - Marker
+
+private extension MapView {
+
+    @ViewBuilder
+    func marker(
+        for point: TrafficPoint
+    ) -> some View {
+
+        let currentPM25 =
+            pm25(
+                for:
+                    point
+            )
+
+        let intervalMinutes =
+            pm25Interval(
+                for:
+                    point
+            )
+
+        Button {
+
+            selectedPoint =
+                point
+
+        } label: {
+
+            PM25MapMarker(
+                value:
+                    currentPM25
+            )
+            .frame(
+                width:
+                    64,
+                height:
+                    64
+            )
+            .contentShape(
+                Circle()
+            )
+        }
+
+        .buttonStyle(
+            MarkerButtonStyle()
+        )
+
+        .accessibilityLabel(
+            point.locationName
+        )
+
+        .accessibilityValue(
+            """
+            Estimasi PM2.5
+            \(String(format: "%.2f", currentPM25))
+            µg/m³ selama
+            \(intervalMinutes)
+            menit
+            """
+        )
+
+        .accessibilityHint(
+            "Ketuk untuk melihat detail kualitas udara"
+        )
+    }
+}
+
+// MARK: - Marker Color
+
+private extension MapView {
+
+    func markerColor(
+        for point: TrafficPoint
+    ) -> Color {
+
+        let currentPM25 =
+            pm25(
+                for:
+                    point
+            )
+
+        switch TrafficPoint.level(for: currentPM25) {
+            case .good:
+                return .green
+
+            case .moderate:
+                return .yellow
+
+            case .unhealthy:
+                return .red
+            }
+    }
+}
+
+
+
+// MARK: - Radar Scale
+
+private extension MapView {
+
+    var radarScale: CGFloat {
+
         switch cameraDistance {
+
         case 0...2_500:
             return 0.55
 
@@ -68,8 +1146,10 @@ struct MapView: View {
         }
     }
 
-    private var radarVisibility: Double {
+    var radarVisibility: Double {
+
         switch cameraDistance {
+
         case 0...2_500:
             return 0.12
 
@@ -87,10 +1167,10 @@ struct MapView: View {
         }
     }
 
-    // MARK: - Spread Visibility
+    var spreadVisibility: Double {
 
-    private var spreadVisibility: Double {
         switch cameraDistance {
+
         case 0...2_500:
             return 1.0
 
@@ -107,143 +1187,56 @@ struct MapView: View {
             return 0.03
         }
     }
-
-    // MARK: - Body
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                mapContent
-                controls
-            }
-            .ignoresSafeArea(edges: .top)
-            .sheet(isPresented: $showingSearch) {
-                MapSearchView(onSelectLocation: moveCamera(to:distance:))
-                    .presentationDragIndicator(.visible)
-            }
-            .navigationDestination(item: $selectedPoint) { point in
-                PointDetailView(
-                    locationName: point.name,
-                    pm25: point.pm25
-                )
-            }
-        }
-    }
 }
 
-// MARK: - Map
+// MARK: - Loading
 
 private extension MapView {
 
-    var mapContent: some View {
-        Map(position: $cameraPosition) {
-            ForEach(points) { point in
+    var loadingView: some View {
 
-                PM25SpreadOverlay(
-                    coordinate: point.coordinate,
-                    directionDegrees: point.spreadDirection,
-                    lengthMeters: 1200,
-                    visibility: spreadVisibility
+        VStack {
+
+            Spacer()
+
+            HStack(
+                spacing: 10
+            ) {
+
+                ProgressView()
+
+                Text(
+                    "Memuat data..."
                 )
-
-                // NOTE: title is empty on purpose — no on-map text label.
-                // Emptying it used to regress tap reliability, but that was
-                // back when each point had 3 separate overlapping
-                // Annotations and MapKit likely relied on the title to help
-                // disambiguate hit-testing between them. Now that spread
-                // animation, radar pulse, and the marker are combined into
-                // a single Annotation per point (see note below), there's
-                // no competing annotation at this coordinate anymore, so
-                // the title is no longer needed for disambiguation.
-                //
-                // NOTE: spread animation, radar pulse, and the marker used
-                // to each be their own separate `Annotation` at this same
-                // coordinate — 3 MapKit annotation views stacked on top of
-                // each other per point. That made MapKit's own annotation
-                // hit-testing/selection ambiguous, independent of SwiftUI's
-                // `.allowsHitTesting(false)` on the decorative layers.
-                // They're now combined into a single Annotation with one
-                // ZStack, so MapKit only ever tracks ONE annotation view
-                // per point. Order inside the ZStack matters: marker must
-                // stay last so it renders on top.
-                Annotation(
-                    "",
-                    coordinate: point.coordinate
-                ) {
-                    ZStack {
-                        PM25SpreadAnimation(
-                            directionDegrees: point.spreadDirection,
-                            visibility: spreadVisibility
-                        )
-
-                        PM25RadarPulse(
-                            color: point.markerColor,
-                            scale: radarScale,
-                            visibility: radarVisibility
-                        )
-
-                        marker(for: point)
-                    }
-                }
+                .font(
+                    .footnote.weight(
+                        .medium
+                    )
+                )
             }
 
-            UserAnnotation()
-        }
-        .mapStyle(.standard)
-        // Changed from `.continuous` to `.onEnd`: continuous firing rebuilt
-        // the entire annotation tree (radar pulse, spread animation, and
-        // every marker) on almost every pixel of camera movement. That
-        // churn is the most likely reason a marker felt like it needed to
-        // "settle" after appearing/panning before it could be tapped.
-        // `.onEnd` only updates once a gesture finishes, so annotation
-        // views stay stable while the user is actively interacting.
-        .onMapCameraChange(frequency: .onEnd) { context in
-            cameraDistance = context.camera.distance
-        }
-    }
-
-    /// Recenters AND zooms the map camera onto a coordinate picked from
-    /// search results. Search must always bring the result into focus,
-    /// even if it was already technically visible in a zoomed-out
-    /// viewport (e.g. world view) — so this always applies the given
-    /// `distance` rather than keeping whatever `cameraDistance` the user
-    /// happened to be at. `distance` comes from MapSearchView, scaled to
-    /// how administratively specific the picked result is (street vs.
-    /// kecamatan vs. kota vs. provinsi/negara), matching Apple Maps'
-    /// behavior of zooming tighter for more specific results.
-    /// `cameraDistance` is updated to match so `.onMapCameraChange` and
-    /// the radar/spread visibility calculations stay in sync with the
-    /// new zoom level.
-    func moveCamera(
-        to coordinate: CLLocationCoordinate2D,
-        distance: Double
-    ) {
-        withAnimation {
-            cameraDistance = distance
-            cameraPosition = .camera(
-                MapCamera(
-                    centerCoordinate: coordinate,
-                    distance: distance
-                )
+            .padding(
+                .horizontal,
+                16
             )
-        }
-    }
 
-    @ViewBuilder
-    func marker(for point: MapPoint) -> some View {
-        Button {
-            selectedPoint = point
-        } label: {
-            PM25MapMarker(value: point.pm25)
-                .frame(width: 64, height: 64)
-                .contentShape(Circle())
+            .padding(
+                .vertical,
+                10
+            )
+
+            .background(
+                .thinMaterial,
+                in:
+                    Capsule()
+            )
+
+            Spacer()
+                .frame(
+                    height:
+                        80
+                )
         }
-        .buttonStyle(MarkerButtonStyle())
-        .accessibilityLabel(point.name)
-        .accessibilityValue(point.accessibilityDescription)
-        .accessibilityHint(
-            "Ketuk untuk melihat detail kualitas udara"
-        )
     }
 }
 
@@ -252,7 +1245,9 @@ private extension MapView {
 private extension MapView {
 
     var controls: some View {
+
         VStack {
+
             topControls
 
             Spacer()
@@ -261,150 +1256,253 @@ private extension MapView {
         }
     }
 
-    // NOTE: The Figma reference places the info/legend button at the
-    // top-LEADING edge of the screen (not trailing, as the previous
-    // implementation had it). Swapped the Spacer position to match.
     var topControls: some View {
+
         HStack {
+
             if showingPM25Legend {
+
                 PM25LegendView {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        showingPM25Legend = false
+
+                    withAnimation(
+                        .easeOut(
+                            duration:
+                                0.15
+                        )
+                    ) {
+
+                        showingPM25Legend =
+                            false
                     }
                 }
+
                 .transition(
                     .opacity
                         .combined(
-                            with: .scale(scale: 0.95)
+                            with:
+                                .scale(
+                                    scale:
+                                        0.95
+                                )
                         )
                 )
+
             } else {
+
                 infoButton
+
                     .transition(
                         .opacity
                             .combined(
-                                with: .scale(scale: 0.95)
+                                with:
+                                    .scale(
+                                        scale:
+                                            0.95
+                                    )
                             )
                     )
             }
 
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .safeAreaPadding(.top, 60)
+
+        .padding(
+            .horizontal,
+            16
+        )
+
+        .safeAreaPadding(
+            .top,
+            60
+        )
     }
 
-    // NOTE: Uses the system Liquid Glass material (`.glassEffect()`) instead
-    // of `.thinMaterial`, matching the "Liquid Glass - Regular - Medium"
-    // component used throughout the Figma reference. The project's
-    // deployment target (iOS 26.5) supports this API directly.
     var infoButton: some View {
+
         Button {
-            withAnimation(.easeOut(duration: 0.15)) {
-                showingPM25Legend = true
+
+            withAnimation(
+                .easeOut(
+                    duration:
+                        0.15
+                )
+            ) {
+
+                showingPM25Legend =
+                    true
             }
+
         } label: {
-            Image(systemName: "info.circle")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(.primary)
-                .frame(width: 44, height: 44)
+
+            Image(
+                systemName:
+                    "info.circle"
+            )
+
+            .font(
+                .system(
+                    size:
+                        20,
+                    weight:
+                        .bold
+                )
+            )
+
+            .foregroundStyle(
+                .primary
+            )
+
+            .frame(
+                width:
+                    44,
+                height:
+                    44
+            )
         }
-        .buttonStyle(.plain)
-        .glassEffect(in: Circle())
-        .accessibilityLabel("Informasi PM2.5")
+
+        .buttonStyle(
+            .plain
+        )
+
+        .glassEffect(
+            in:
+                Circle()
+        )
+
+        .accessibilityLabel(
+            "Informasi PM2.5"
+        )
+
         .accessibilityHint(
             "Menampilkan informasi kategori PM2.5"
         )
     }
 
     var searchButton: some View {
-        Button {
-            showingSearch = true
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .font(.body.weight(.medium))
 
-                Text("Search Area")
-                    .font(.body)
+        Button {
+
+            showingSearch =
+                true
+
+        } label: {
+
+            HStack(
+                spacing:
+                    10
+            ) {
+
+                Image(
+                    systemName:
+                        "magnifyingglass"
+                )
+
+                .font(
+                    .body.weight(
+                        .medium
+                    )
+                )
+
+                Text(
+                    "Search Area"
+                )
+                .font(
+                    .body
+                )
 
                 Spacer()
 
-                Image(systemName: "mic.fill")
-                    .font(.body)
+                Image(
+                    systemName:
+                        "mic.fill"
+                )
+                .font(
+                    .body
+                )
             }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 16)
-            .frame(minHeight: 52)
+
+            .foregroundStyle(
+                .secondary
+            )
+
+            .padding(
+                .horizontal,
+                16
+            )
+
+            .frame(
+                minHeight:
+                    52
+            )
         }
-        .buttonStyle(.plain)
-        .glassEffect(in: Capsule())
-        .accessibilityLabel("Search Area")
-        .accessibilityHint("Mencari lokasi")
-        .padding(.horizontal, 20)
-        .padding(.bottom, 12)
+
+        .buttonStyle(
+            .plain
+        )
+
+        .glassEffect(
+            in:
+                Capsule()
+        )
+
+        .accessibilityLabel(
+            "Search Area"
+        )
+
+        .accessibilityHint(
+            "Mencari lokasi"
+        )
+
+        .padding(
+            .horizontal,
+            20
+        )
+
+        .padding(
+            .bottom,
+            12
+        )
     }
 }
 
 // MARK: - Marker Button Style
 
-/// Gives the marker a visible pressed state (slightly scaled down and
-/// dimmed) so it's clear a tap registered, instead of `.plain`'s lack of
-/// any feedback. Kept lightweight on purpose — the hit-testing/annotation
-/// churn fixed earlier in this file is unrelated to this purely visual
-/// change.
-private struct MarkerButtonStyle: ButtonStyle {
+private struct MarkerButtonStyle:
+    ButtonStyle {
 
-    func makeBody(configuration: Configuration) -> some View {
+    func makeBody(
+        configuration:
+            Configuration
+    ) -> some View {
+
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.88 : 1.0)
-            .opacity(configuration.isPressed ? 0.75 : 1.0)
-            .animation(
-                .easeOut(duration: 0.12),
-                value: configuration.isPressed
+
+            .scaleEffect(
+                configuration.isPressed
+                    ? 0.88
+                    : 1.0
             )
-    }
-}
 
-// MARK: - Map Point
+            .opacity(
+                configuration.isPressed
+                    ? 0.75
+                    : 1.0
+            )
 
-private struct MapPoint: Identifiable, Hashable {
-
-    let id = UUID()
-
-    let name: String
-    let latitude: Double
-    let longitude: Double
-    let pm25: Double
-    let spreadDirection: Double
-
-    var coordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(
-            latitude: latitude,
-            longitude: longitude
-        )
-    }
-
-    var markerColor: Color {
-        switch pm25 {
-        case 0...35:
-            return .green
-
-        case 36...55:
-            return .yellow
-
-        default:
-            return .red
-        }
-    }
-    var accessibilityDescription: String {
-        "PM2.5 \(pm25.formatted(.number.precision(.fractionLength(0)))) mikrogram per meter kubik"
+            .animation(
+                .easeOut(
+                    duration:
+                        0.12
+                ),
+                value:
+                    configuration.isPressed
+            )
     }
 }
 
 // MARK: - Preview
 
 #Preview {
+
     MapView()
 }
-
