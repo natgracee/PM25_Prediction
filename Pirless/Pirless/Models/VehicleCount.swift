@@ -2,14 +2,6 @@
 //  VehicleCount.swift
 //  Pirless
 //
-//  Created by Graceila Natasya on 19/08/26.
-//
-
-
-//
-//  VehicleCount.swift
-//  Pirless
-//
 
 import Foundation
 
@@ -33,10 +25,6 @@ struct VehicleCount: Codable, Equatable {
     }
 
     var total: Int {
-
-        car
-        + motorcycle
-        + bus
-        + truck
+        car + motorcycle + bus + truck
     }
 }
